@@ -1,0 +1,46 @@
+{
+  "name": "hotel-orchestrator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:phase1": "vitest run tests/phase1.test.ts",
+    "test:phase2": "vitest run tests/phase2.test.ts",
+    "test:phase3": "vitest run tests/phase3.test.ts",
+    "test:phase4": "vitest run tests/phase4.test.ts",
+    "test:phase5": "vitest run tests/phase5.test.ts",
+    "test:phase6": "vitest run tests/phase6.test.ts",
+    "test:all": "vitest run tests",
+    "worker": "tsx watch src/temporal/worker.ts",
+    "worker:start": "node dist/temporal/worker.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@temporalio/activity": "^1.26.0",
+    "@temporalio/client": "^1.26.0",
+    "@temporalio/worker": "^1.26.0",
+    "@temporalio/workflow": "^1.26.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "ioredis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}
