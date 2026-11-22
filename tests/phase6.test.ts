@@ -21,6 +21,39 @@ describe("Phase 6: complete API integration", () => {
     expect(response.body).toEqual([]);
   });
 
+  it("returns the documented public response fields only", async () => {
+    vi.mocked(startHotelOfferWorkflow).mockResolvedValueOnce([
+      {
+        name: "Holtin",
+        price: 5340,
+        supplier: "Supplier B",
+        commissionPct: 20,
+        alternateOffers: [
+          {
+            hotelId: "a1",
+            name: "Holtin",
+            price: 6000,
+            city: "delhi",
+            commissionPct: 10,
+            supplier: "Supplier A"
+          }
+        ]
+      }
+    ]);
+
+    const response = await request(app).get("/api/hotels?city=delhi");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      {
+        name: "Holtin",
+        price: 5340,
+        supplier: "Supplier B",
+        commissionPct: 20
+      }
+    ]);
+  });
+
   it("returns a consistent error for missing city", async () => {
     const response = await request(app).get("/api/hotels");
 

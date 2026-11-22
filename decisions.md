@@ -337,3 +337,151 @@ This document records the architecture and implementation decisions made while b
 - Redis data survives normal Compose restarts.
 - Append-only persistence reduces data loss between restarts.
 - The volume keeps infrastructure state separate from the application image.
+
+## 32. Use conservative hotel-name canonicalization
+
+**Decision:** Normalize Unicode diacritics, punctuation, casing, whitespace, common location aliases, and trailing generic property suffixes before matching names.
+
+**Reason:**
+- Names such as `Hôtel Résumé Suites` and `Hotel Resume` should compare consistently.
+- Generic suffixes such as `Hotel`, `Resort`, `Suites`, and `Inn` do not identify the property itself.
+- Canonicalization improves matching without changing the display name returned to clients.
+
+**Safety rule:** Canonical names are not sufficient by themselves; city compatibility is always required.
+
+## 33. Allow only unique, metadata-compatible fuzzy matches
+
+**Decision:** Apply fuzzy token matching only when the city matches, optional address and star-rating metadata are compatible, and exactly one candidate reaches the similarity threshold.
+
+**Reason:**
+- Exact matching alone misses abbreviations such as `New York` versus `NY`.
+- Requiring one unique candidate prevents ambiguous properties from being merged.
+- Location and property metadata reduce false-positive matches.
+
+**Fallback:** Ambiguous or incompatible candidates remain separate offers.
+
+## 34. Preserve alternate supplier offers
+
+**Decision:** Add the losing supplier offer as `alternateOffers` on a consolidated record when two offers are matched.
+
+**Reason:**
+- The selected record remains optimized for the cheapest response.
+- The runner-up is available for pricing audits and debugging.
+- The full alternate metadata includes supplier, price, commission, hotel ID, city, and optional property metadata.
+
+**Compatibility:** Supplier-exclusive records omit `alternateOffers` rather than returning an unnecessary empty array.
+
+## 35. Scope Redis caches by search context
+
+**Decision:** Derive Redis keys from normalized city, check-in, and check-out values, while keeping price filters as read-time sorted-set bounds.
+
+**Reason:**
+- Different stay dates must not share potentially incompatible offers.
+- Min/max prices are filters over the same offer inventory and do not need separate copies.
+- A deterministic context hash keeps keys bounded and avoids unsafe raw query strings in Redis keys.
+
+**Key format:**
+
+```text
+hotel-offers:{city}:{contextHash}:prices
+hotel-offers:{city}:{contextHash}:details
+hotel-offers:{city}:{contextHash}:metadata
+```
+
+## 36. Apply a 15-minute Redis cache TTL
+
+**Decision:** Apply a configurable `HOTEL_CACHE_TTL_SECONDS` value, defaulting to 900 seconds.
+
+**Reason:**
+- Supplier prices should not remain indefinitely.
+- A TTL limits the lifetime of ghost offers after refresh failures or process interruptions.
+- The value can be tuned per environment without changing code.
+
+## 37. Store cache refresh metadata
+
+**Decision:** Store refresh time, expiration time, search context, and record count in a metadata key.
+
+**Reason:**
+- Consumers and future cache-read logic can distinguish a cache miss from a valid empty result.
+- Operational checks can identify stale or unexpectedly empty supplier results.
+- Metadata makes cache behavior auditable without scanning the full hotel hash.
+
+## 38. Classify supplier and Redis failures by retryability
+
+**Decision:** Use typed errors for supplier validation failures, supplier availability failures, Redis availability failures, and invalid cached data.
+
+**Reason:**
+- Malformed payloads and HTTP 400 responses will not improve through retries.
+- HTTP 429, server errors, network failures, and Redis connection failures may recover and should be retried.
+- Typed errors allow Temporal policies to distinguish these cases.
+
+## 39. Use separate Temporal activity retry policies
+
+**Decision:** Supplier activities use a 15-second timeout and three attempts with a 10-second maximum backoff. Redis activities use a 10-second timeout and three attempts with a 5-second maximum backoff.
+
+**Reason:**
+- Supplier calls and Redis operations have different latency and failure characteristics.
+- Shorter Redis timeouts prevent a stalled cache operation from consuming the full workflow timeout.
+- Non-retryable error types prevent wasted attempts for invalid input or data.
+
+## 40. Emit structured activity logs
+
+**Decision:** Log JSON events for supplier success/failure and Redis read/write operations.
+
+**Reason:**
+- Structured events are easier to search and aggregate than free-form messages.
+- Logs include supplier, city, record count, error type, duration, and TTL information.
+- This improves diagnosis without exposing request secrets or full hotel payloads.
+
+## 41. Read valid cache entries before refreshing suppliers
+
+**Decision:** Check cache metadata before fetching suppliers. A valid cache entry
+is returned through the existing Redis price filter path unless `refresh=true`
+is requested.
+
+**Reason:**
+- Repeated reads do not create unnecessary supplier traffic or Temporal work.
+- Cache metadata distinguishes a cached empty result from a cache miss.
+- An explicit refresh keeps callers in control when current supplier data is required.
+
+## 42. Coalesce concurrent non-refresh workflows
+
+**Decision:** Use a deterministic Temporal workflow ID for non-refresh requests
+with the same city and stay context. If another request already started that
+workflow, attach to it instead of starting a duplicate execution.
+
+**Reason:**
+- Concurrent cache misses should not trigger duplicate supplier calls.
+- Refresh requests remain independently executable with unique workflow IDs.
+
+## 43. Keep alternate offers internal to the public API
+
+**Decision:** Preserve alternate supplier offers in the comparison and Redis
+models, but project the public `/api/hotels` response to the four assessment
+fields.
+
+**Reason:**
+- Auditing and matching diagnostics retain the secondary offer metadata.
+- Strict consumers receive exactly the documented response shape.
+- This separates internal enrichment from the stable public contract.
+
+## 44. Use deterministic varied mock scenarios
+
+**Decision:** Generate shared offers with a mix of Supplier A wins, Supplier B
+wins, and equal-price ties, with independent commission calculations.
+
+**Reason:**
+- The comparison logic is exercised against all selection outcomes.
+- Deterministic values preserve reproducibility while avoiding misleading
+  one-sided pricing patterns.
+
+## 45. Support opt-in dependency health checks
+
+**Decision:** Keep the basic `/health` response lightweight by default and enable
+Redis, Temporal, and supplier checks with `HEALTHCHECK_DEPENDENCIES=true`.
+
+**Reason:**
+- Local unit tests and tooling can check API liveness without requiring all
+  infrastructure services.
+- Docker deployment can report meaningful dependency readiness.
+- Failed dependency checks return HTTP 503 with per-service statuses.

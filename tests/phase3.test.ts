@@ -25,6 +25,13 @@ describe("Phase 3: comparison and deduplication", () => {
     expect(normalizeHotelName("  The   Grand  ")).toBe("the grand");
   });
 
+  it("normalizes diacritics, punctuation, aliases, and generic suffixes", () => {
+    expect(normalizeHotelName("Grand Hyatt New York, Hotel")).toBe(
+      "grand hyatt ny"
+    );
+    expect(normalizeHotelName("Hôtel Résumé Suites")).toBe("hotel resume");
+  });
+
   it("selects the cheapest overlapping offer and preserves its fields", () => {
     expect(
       compareAndDeduplicateHotels(
@@ -36,9 +43,51 @@ describe("Phase 3: comparison and deduplication", () => {
         name: "holtin",
         price: 5340,
         supplier: "Supplier B",
-        commissionPct: 20
+        commissionPct: 20,
+        alternateOffers: [
+          {
+            hotelId: "a1",
+            name: "Holtin",
+            price: 6000,
+            city: "delhi",
+            commissionPct: 10,
+            supplier: "Supplier A"
+          }
+        ]
       }
     ]);
+  });
+
+  it("matches safe fuzzy names in the same city", () => {
+    const result = compareAndDeduplicateHotels(
+      [hotel("a1", "Grand Hyatt New York", 6000)],
+      [hotel("b1", "Grand Hyatt NY Hotel", 5500)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].supplier).toBe("Supplier B");
+    expect(result[0].alternateOffers).toHaveLength(1);
+  });
+
+  it("does not fuzzy-match hotels from different cities", () => {
+    const result = compareAndDeduplicateHotels(
+      [hotel("a1", "Grand Hyatt New York", 6000)],
+      [{ ...hotel("b1", "Grand Hyatt NY", 5500), city: "boston" }]
+    );
+
+    expect(result).toHaveLength(2);
+  });
+
+  it("does not fuzzy-match ambiguous candidates", () => {
+    const result = compareAndDeduplicateHotels(
+      [hotel("a1", "Grand Hyatt New York", 6000)],
+      [
+        hotel("b1", "Grand Hyatt NY Plaza", 5500),
+        hotel("b2", "Grand Hyatt NY Tower", 5600)
+      ]
+    );
+
+    expect(result).toHaveLength(3);
   });
 
   it("retains supplier-exclusive hotels", () => {

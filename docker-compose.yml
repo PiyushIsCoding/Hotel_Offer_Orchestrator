@@ -38,7 +38,9 @@ services:
       TEMPORAL_TASK_QUEUE: hotel-offers
       TEMPORAL_NAMESPACE: default
       REDIS_URL: redis://redis:6379
+      HOTEL_CACHE_TTL_SECONDS: 900
       SUPPLIERS_BASE_URL: http://api:3000
+      HEALTHCHECK_DEPENDENCIES: "true"
     depends_on:
       redis:
         condition: service_healthy
@@ -69,6 +71,7 @@ services:
       TEMPORAL_TASK_QUEUE: hotel-offers
       TEMPORAL_NAMESPACE: default
       REDIS_URL: redis://redis:6379
+      HOTEL_CACHE_TTL_SECONDS: 900
       SUPPLIERS_BASE_URL: http://api:3000
     depends_on:
       redis:

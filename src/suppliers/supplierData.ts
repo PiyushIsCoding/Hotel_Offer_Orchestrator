@@ -90,6 +90,7 @@ function buildHotels(
   priceOffset: number
 ): SupplierHotel[] {
   const hotels: SupplierHotel[] = [];
+  const sharedAdjustments = [0, 0, 0, -470, -700, -235];
 
   for (const city of cities) {
     const cityIndex = cities.indexOf(city);
@@ -98,9 +99,16 @@ function buildHotels(
       hotels.push({
         hotelId: `${prefix}${hotelIndex + 1}-${cityIndex + 1}`,
         name: cityIndex > 0 ? `${name} ${city.charAt(0).toUpperCase() + city.slice(1)}` : name,
-        price: 4200 + cityIndex * 950 + hotelIndex * 230 + priceOffset,
+        price:
+          4200 +
+          cityIndex * 950 +
+          hotelIndex * 230 +
+          priceOffset +
+          (prefix === "a" ? sharedAdjustments[hotelIndex % sharedAdjustments.length] : 0),
         city,
-        commissionPct: 10 + ((hotelIndex + cityIndex) % 12)
+        commissionPct: prefix === "a"
+          ? 9 + ((hotelIndex + cityIndex * 2) % 13)
+          : 10 + ((hotelIndex + cityIndex) % 12)
       });
     });
 

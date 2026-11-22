@@ -9,33 +9,56 @@ import {
   SupplierHotel
 } from "../../types/hotel";
 
-const activities = proxyActivities<{
+const supplierActivities = proxyActivities<{
   fetchSupplierA(city: string): Promise<SupplierHotel[]>;
   fetchSupplierB(city: string): Promise<SupplierHotel[]>;
-  saveHotelsToRedis(city: string, hotels: ConsolidatedHotel[]): Promise<void>;
-  getHotelsFromRedis(
-    city: string,
-    minPrice?: number,
-    maxPrice?: number
-  ): Promise<ConsolidatedHotel[]>;
 }>({
-  startToCloseTimeout: "30 seconds",
+  startToCloseTimeout: "15 seconds",
   retry: {
-    maximumAttempts: 3
+    initialInterval: "1 second",
+    maximumInterval: "10 seconds",
+    maximumAttempts: 3,
+    nonRetryableErrorTypes: ["SupplierValidationError"]
+  }
+});
+
+const redisActivities = proxyActivities<{
+  saveHotelsToRedis(
+    input: HotelWorkflowInput,
+    hotels: ConsolidatedHotel[]
+  ): Promise<void>;
+  getHotelsFromRedis(input: HotelWorkflowInput): Promise<ConsolidatedHotel[]>;
+  getHotelCacheMetadata(
+    input: Pick<HotelWorkflowInput, "city" | "checkIn" | "checkOut">
+  ): Promise<import("../../types/hotel").HotelCacheMetadata | null>;
+}>({
+  startToCloseTimeout: "10 seconds",
+  retry: {
+    initialInterval: "1 second",
+    maximumInterval: "5 seconds",
+    maximumAttempts: 3,
+    nonRetryableErrorTypes: ["RedisDataError"]
   }
 });
 
 export async function hotelOfferWorkflow(
   input: HotelWorkflowInput
 ): Promise<ConsolidatedHotel[]> {
-  const { city, minPrice, maxPrice } = input;
+  const { city } = input;
   if (!city.trim()) {
     throw ApplicationFailure.nonRetryable("City is required");
   }
 
+  if (!input.refresh) {
+    const cacheMetadata = await redisActivities.getHotelCacheMetadata(input);
+    if (cacheMetadata) {
+      return redisActivities.getHotelsFromRedis(input);
+    }
+  }
+
   const [supplierAHotels, supplierBHotels] = await Promise.all([
-    activities.fetchSupplierA(city),
-    activities.fetchSupplierB(city)
+    supplierActivities.fetchSupplierA(city),
+    supplierActivities.fetchSupplierB(city)
   ]);
 
   const consolidatedHotels = compareAndDeduplicateHotels(
@@ -43,6 +66,6 @@ export async function hotelOfferWorkflow(
     supplierBHotels
   );
 
-  await activities.saveHotelsToRedis(city, consolidatedHotels);
-  return activities.getHotelsFromRedis(city, minPrice, maxPrice);
+  await redisActivities.saveHotelsToRedis(input, consolidatedHotels);
+  return redisActivities.getHotelsFromRedis(input);
 }

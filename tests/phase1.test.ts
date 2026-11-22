@@ -16,4 +16,17 @@ describe("Phase 1: Backend foundation", () => {
     const response = await request(app).get("/health");
     expect(response.body).toMatchObject({ status: "ok" });
   });
+
+  it("reports dependency checks when enabled", async () => {
+    process.env.HEALTHCHECK_DEPENDENCIES = "false";
+    const response = await request(app).get("/health");
+
+    expect(response.body.checks).toEqual({
+      api: "ok",
+      redis: "not_checked",
+      temporal: "not_checked",
+      supplierA: "not_checked",
+      supplierB: "not_checked"
+    });
+  });
 });

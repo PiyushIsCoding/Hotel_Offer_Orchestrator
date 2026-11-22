@@ -131,6 +131,33 @@ Test the containerized API:
 curl.exe "http://localhost:3000/api/hotels?city=delhi"
 ```
 
+Optional stay-context parameters are supported and are included in Redis cache
+keys:
+
+```powershell
+curl.exe "http://localhost:3000/api/hotels?city=delhi&checkIn=2026-12-01&checkOut=2026-12-05"
+```
+
+Requests use a valid Redis cache entry by default. Add `refresh=true` to force
+both suppliers to be queried and replace the cached results:
+
+```powershell
+curl.exe "http://localhost:3000/api/hotels?city=delhi&refresh=true"
+```
+
+`refresh` accepts only `true` or `false`.
+
+The public hotel response contains the assessment fields `name`, `price`,
+`supplier`, and `commissionPct`. Alternate supplier offers remain available
+internally for comparison and auditing but are not exposed by this endpoint.
+
+When `HEALTHCHECK_DEPENDENCIES=true`, `/health` also checks Redis, Temporal, and
+both supplier endpoints:
+
+```powershell
+curl.exe http://localhost:3000/health
+```
+
 Stop the stack while preserving the Redis volume:
 
 ```powershell

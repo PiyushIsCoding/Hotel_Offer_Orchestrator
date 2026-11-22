@@ -3,6 +3,10 @@ import request from "supertest";
 import app from "../src/app";
 import { fetchSupplierA, fetchSupplierB } from "../src/temporal/activities";
 import { startHotelOfferWorkflow } from "../src/temporal/client";
+import {
+  SupplierUnavailableError,
+  SupplierValidationError
+} from "../src/temporal/errors";
 
 vi.mock("../src/temporal/client", () => ({
   startHotelOfferWorkflow: vi.fn()
@@ -26,6 +30,29 @@ describe("Phase 4: Temporal integration boundaries", () => {
       minPrice: 5000,
       maxPrice: 7000
     });
+  });
+
+  it("accepts an explicit cache refresh flag", async () => {
+    vi.mocked(startHotelOfferWorkflow).mockResolvedValueOnce([]);
+
+    const response = await request(app).get(
+      "/api/hotels?city=delhi&refresh=true"
+    );
+
+    expect(response.status).toBe(200);
+    expect(startHotelOfferWorkflow).toHaveBeenCalledWith({
+      city: "delhi",
+      refresh: true
+    });
+  });
+
+  it("rejects invalid cache refresh values", async () => {
+    const response = await request(app).get(
+      "/api/hotels?city=delhi&refresh=yes"
+    );
+
+    expect(response.status).toBe(400);
+    expect(startHotelOfferWorkflow).not.toHaveBeenCalled();
   });
 
   it("returns 502 when the Temporal workflow fails", async () => {
@@ -74,5 +101,29 @@ describe("Phase 4: Temporal integration boundaries", () => {
 
     await expect(fetchSupplierA("delhi")).rejects.toThrow("HTTP 503");
     await expect(fetchSupplierB("delhi")).rejects.toThrow("invalid response");
+  });
+
+  it("classifies supplier validation and availability errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 400 })
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+    );
+
+    await expect(fetchSupplierA("delhi")).rejects.toBeInstanceOf(
+      SupplierValidationError
+    );
+    await expect(fetchSupplierB("delhi")).rejects.toBeInstanceOf(
+      SupplierUnavailableError
+    );
+  });
+
+  it("classifies supplier network failures as retryable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    await expect(fetchSupplierA("delhi")).rejects.toBeInstanceOf(
+      SupplierUnavailableError
+    );
   });
 });

@@ -19,6 +19,34 @@ function parsePrice(value: unknown): number | undefined {
   return parsed;
 }
 
+function parseDate(value: unknown, name: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+    Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+  ) {
+    throw new Error(`${name} must use YYYY-MM-DD format`);
+  }
+
+  return value;
+}
+
+function parseRefresh(value: unknown): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value !== "true" && value !== "false") {
+    throw new Error("refresh must be true or false");
+  }
+
+  return value === "true";
+}
+
 function getWorkflowFailure(error: unknown): {
   status: number;
   code: string;
@@ -74,6 +102,9 @@ export async function getHotels(req: Request, res: Response): Promise<void> {
   try {
     const minPrice = parsePrice(req.query.minPrice);
     const maxPrice = parsePrice(req.query.maxPrice);
+    const checkIn = parseDate(req.query.checkIn, "checkIn");
+    const checkOut = parseDate(req.query.checkOut, "checkOut");
+    const refresh = parseRefresh(req.query.refresh);
 
     if (
       minPrice !== undefined &&
@@ -87,7 +118,24 @@ export async function getHotels(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (checkIn && checkOut && checkIn > checkOut) {
+      res.status(400).json({
+        code: "INVALID_REQUEST",
+        error: "checkIn cannot be after checkOut"
+      });
+      return;
+    }
+
     input = { city, minPrice, maxPrice };
+    if (checkIn) {
+      input.checkIn = checkIn;
+    }
+    if (checkOut) {
+      input.checkOut = checkOut;
+    }
+    if (refresh !== undefined) {
+      input.refresh = refresh;
+    }
   } catch (error) {
     res.status(400).json({
       code: "INVALID_REQUEST",
@@ -98,7 +146,14 @@ export async function getHotels(req: Request, res: Response): Promise<void> {
 
   try {
     const hotels = await startHotelOfferWorkflow(input);
-    res.status(200).json(hotels);
+    res.status(200).json(
+      hotels.map(({ name, price, supplier, commissionPct }) => ({
+        name,
+        price,
+        supplier,
+        commissionPct
+      }))
+    );
   } catch (error) {
     console.error("Hotel workflow failed:", error);
     const failure = getWorkflowFailure(error);

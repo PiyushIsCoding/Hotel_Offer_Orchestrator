@@ -1,4 +1,9 @@
-import { Client, Connection } from "@temporalio/client";
+import { createHash } from "node:crypto";
+import {
+  Client,
+  Connection,
+  WorkflowExecutionAlreadyStartedError
+} from "@temporalio/client";
 import { ConsolidatedHotel, HotelWorkflowInput } from "../types/hotel";
 
 export async function startHotelOfferWorkflow(
@@ -16,12 +21,34 @@ export async function startHotelOfferWorkflow(
   try {
     const taskQueue = process.env.TEMPORAL_TASK_QUEUE ?? "hotel-offers";
     const normalizedCity = input.city.trim().toLowerCase();
-    const handle = await client.workflow.start("hotelOfferWorkflow", {
-      taskQueue,
-      workflowId: `hotel-offers-${normalizedCity}-${Date.now()}`,
-      workflowExecutionTimeout: "60 seconds",
-      args: [{ ...input, city: normalizedCity }]
+    const context = JSON.stringify({
+      city: normalizedCity,
+      checkIn: input.checkIn ?? null,
+      checkOut: input.checkOut ?? null
     });
+    const contextHash = createHash("sha256")
+      .update(context)
+      .digest("hex")
+      .slice(0, 16);
+    const workflowId = input.refresh
+      ? `hotel-offers-${contextHash}-${Date.now()}`
+      : `hotel-offers-${contextHash}`;
+
+    let handle;
+    try {
+      handle = await client.workflow.start("hotelOfferWorkflow", {
+        taskQueue,
+        workflowId,
+        workflowExecutionTimeout: "60 seconds",
+        args: [{ ...input, city: normalizedCity }]
+      });
+    } catch (error) {
+      if (!(error instanceof WorkflowExecutionAlreadyStartedError)) {
+        throw error;
+      }
+
+      handle = client.workflow.getHandle("hotelOfferWorkflow", workflowId);
+    }
 
     return await handle.result();
   } finally {

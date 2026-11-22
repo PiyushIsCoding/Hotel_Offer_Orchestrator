@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
-
 import app from "../src/app";
+import { supplierAHotels, supplierBHotels } from "../src/suppliers/supplierData";
 
 type SupplierHotel = {
   name: string;
@@ -89,5 +89,24 @@ describe("Phase 2: Mock supplier APIs", () => {
     const onlyB = [...namesB].filter((name) => !namesA.has(name));
 
     expect(onlyA.length + onlyB.length).toBeGreaterThan(0);
+  });
+
+  it("provides cheaper, equal, and alternate shared offers", () => {
+    const supplierBByName = new Map(
+      supplierBHotels
+        .filter((hotel) => hotel.city === "delhi")
+        .map((hotel) => [hotel.name, hotel])
+    );
+    const comparisons = supplierAHotels
+      .filter((hotel) => hotel.city === "delhi")
+      .map((hotel) => {
+        const supplierB = supplierBByName.get(hotel.name);
+        return supplierB ? hotel.price - supplierB.price : undefined;
+      })
+      .filter((difference): difference is number => difference !== undefined);
+
+    expect(comparisons.some((difference) => difference > 0)).toBe(true);
+    expect(comparisons.some((difference) => difference === 0)).toBe(true);
+    expect(comparisons.some((difference) => difference < 0)).toBe(true);
   });
 });
